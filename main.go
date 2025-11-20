@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -28,9 +27,8 @@ func main() {
 	entryPoint := os.Getenv("entryPoint")
 
 	// Markets
-
-	kalshiMarkets := os.Getenv("kalshi_markets_API")
-	//poly_markets_API = os.Getenv("poly_markets_API")
+	kalshi_events_API := os.Getenv("kalshi_events_API")
+	poly_events_API := os.Getenv("poly_events_API")
 
 	proxy, err := url.Parse(fmt.Sprintf("http://user-%s-country-%s:%s@%s", username, country, password, entryPoint))
 	if err != nil {
@@ -45,18 +43,33 @@ func main() {
 		},
 	}
 
-	var wg sync.WaitGroup // init WaitGroup to wait for goroutine to finish instead of instnt exit
-	wg.Add(1)
+	ticker := time.NewTicker(time.Second)
 
-	go kalshi(kalshiMarkets, apiClient, &wg)
+	defer ticker.Stop()
 
-	wg.Wait() // wait for all go routines to finish here at end of all routines
+	// channel for receiving data
+	json_chan := make(chan string, 200)
+
+	go func() {
+		for chdata := range json_chan {
+			fmt.Println("json-channel", chdata)
+			os.WriteFile("data", []byte(chdata), 0666)
+			if err != nil {
+				log.Fatal("Error writing data to file", err)
+			}
+		}
+	}()
+
+	for range ticker.C {
+		go kalshi(kalshi_events_API, apiClient, json_chan)
+		go poly(poly_events_API, apiClient, json_chan)
+	}
 
 }
 
-func kalshi(apiURL string, apiClient *http.Client, wg *sync.WaitGroup) {
+func kalshi(events_API string, apiClient *http.Client, json_chan chan string) {
 	// new request
-	req, err := http.NewRequest("GET", apiURL, nil)
+	req, err := http.NewRequest("GET", events_API, nil)
 	if err != nil {
 		log.Fatalf("Err making get req: %v", err)
 	}
@@ -73,7 +86,6 @@ func kalshi(apiURL string, apiClient *http.Client, wg *sync.WaitGroup) {
 	}
 
 	defer res.Body.Close() // close connection before exiting
-	defer wg.Done()
 	// read from the Body
 
 	body, err := io.ReadAll(res.Body)
@@ -88,11 +100,11 @@ func kalshi(apiURL string, apiClient *http.Client, wg *sync.WaitGroup) {
 
 	type Market struct {
 		// OpenInterest int `json:"open_interest"`
-		Liquidity       int `json:"liquidity"`
-		Volume          int `json:"volume"`
-		No_ask_dollars  int `json:"no_ask"`
-		Yes_ask_dollars int `json:"yes_yes"`
-		Status          int `json:"status"`
+		Liquidity       int    `json:"liquidity"`
+		Volume          int    `json:"volume"`
+		No_ask_dollars  int    `json:"no_ask"`
+		Yes_ask_dollars int    `json:"yes_yes"`
+		Status          string `json:"status"`
 	}
 
 	type Events struct {
@@ -114,18 +126,75 @@ func kalshi(apiURL string, apiClient *http.Client, wg *sync.WaitGroup) {
 		log.Fatalf("Error unmarshalling: %v", err)
 	}
 
-	for _, event := range kdata.Events {
-		for _, market := range event.Markets {
-			fmt.Println("OI:", market.OpenInterest)
-		}
-	}
-
-	//pretty print json
+	// pretty print json
 	prettyjson, err := json.MarshalIndent(kdata, " ", "  ")
 	if err != nil {
 		log.Fatal("Unable to prettyjson")
 		panic(err)
 	}
 
-	fmt.Println("res:", string(prettyjson))
+	// fmt.Println("res:", string(prettyjson))
+
+	json_chan <- string(prettyjson)
+}
+
+func poly(events_api string, apiClient *http.Client, json_chan chan string) {
+	req, err := http.NewRequest("GET", events_api, nil)
+	if err != nil {
+		log.Fatal("err making poly GET req", err)
+	}
+
+	// structs
+	type polymarketdata struct {
+		Title    string  `json:"title"`
+		Category string  `json:"category"`
+		Volume   float64 `json:"volume"`
+		Image    string  `json:"image"`
+	}
+
+	for {
+
+		res, err := apiClient.Do(req)
+		if err != nil {
+			log.Fatal("err getting a res", err)
+		}
+
+		// creating a new decoder for incmin json data stream
+		body, err := io.ReadAll(res.Body)
+		res.Body.Close()
+
+		if err != nil {
+			log.Fatal("err reading body", err)
+		}
+
+		// decoder := json.NewDecoder(req.Body)
+
+		var pdata []polymarketdata
+
+		// err = json.NewDecoder(res.Body).Decode(&pdata)
+
+		// if err := decoder.Decode(&pdata); err != nil {
+		// 	if err == io.EOF {
+		// 		return
+		// 	}
+		// 	log.Println("decode err", err)
+		// 	return
+		// }
+
+		if err = json.Unmarshal(body, &pdata); err != nil {
+			log.Fatal("err unmarshal poly:", err)
+		}
+		prettyjson, err := json.MarshalIndent(pdata, " ", "  ")
+		if err != nil {
+			log.Fatal("err marshalIndent:", err)
+		}
+		log.Println("poly", string(prettyjson))
+		fmt.Println("Received", string(prettyjson))
+		fmt.Println("fetched at:", time.Now())
+
+		time.Sleep(time.Second)
+
+		// json_chan <- string(prettyjson)
+	}
+
 }
