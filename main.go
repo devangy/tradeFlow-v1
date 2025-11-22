@@ -18,6 +18,7 @@ func main() {
 
 	// env init
 	err := godotenv.Load()
+
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
@@ -51,12 +52,9 @@ func main() {
 	// channel for receiving data
 	json_chan := make(chan any, 200)
 
-	// var wg sync.WaitGroup
-	// wg.Add(1)
+	go Bot(json_chan)
 
 	go func() {
-
-		// defer wg.Done()
 
 		// opening a file with append mode for writing data continuously
 		// flags append at the end, create if file dont exist and write only to file
@@ -67,7 +65,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		file, err := os.OpenFile(filepath.Join(dir, "output.json"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		file, err := os.OpenFile(filepath.Join(dir, "output.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			log.Fatalln("Err opening file:", err)
 		}
@@ -76,12 +74,18 @@ func main() {
 
 		// json encoder for writing directly to file
 		encoder := json.NewEncoder(file)
-		encoder.SetIndent("", " ") // make json pretty
+		// encoder.SetIndent("", " ") // make json pretty
+
+		// handler := slog.NewTextHandler(os.Stdout, nil)
+		// logger := slog.New(handler)
+		// slog.SetDefault(logger)
 
 		for chdata := range json_chan {
 			if err = encoder.Encode(chdata); err != nil {
 				log.Fatalln("err encoding data to file:", err)
 			}
+			// slog.Info("LOG", chdata)
+
 		}
 		fmt.Println("Finished writing data to output file")
 	}()
@@ -91,7 +95,6 @@ func main() {
 		go poly(poly_events_API, apiClient, json_chan)
 	}
 
-	// wg.Wait()
 }
 
 func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
@@ -120,11 +123,6 @@ func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
 		log.Fatal("Error reading from res Body")
 	}
 
-	// unmarshall body into json
-
-	// empty interface will populate based on unmarshall by passing reference &
-	//var Kmarket map[string] interface {}
-
 	type Market struct {
 		// OpenInterest int `json:"open_interest"`
 		Liquidity       int    `json:"liquidity"`
@@ -134,7 +132,7 @@ func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
 		Status          string `json:"status"`
 	}
 
-	type Events struct {
+	type Event struct {
 		Title        string   `json:"title"`
 		EventTicker  string   `json:"event_ticker"`
 		SeriesTicker string   `json:"series_ticker"`
@@ -144,7 +142,7 @@ func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
 
 	// initial data struct
 	type kmarketdata struct {
-		Events []Events
+		Events []Event
 	}
 	var kdata kmarketdata
 
@@ -179,49 +177,46 @@ func poly(events_api string, apiClient *http.Client, json_chan chan any) {
 		Image    string  `json:"image"`
 	}
 
-	for {
-
-		res, err := apiClient.Do(req)
-		if err != nil {
-			log.Fatal("err getting a res", err)
-		}
-
-		// creating a new decoder for incmin json data stream
-		body, err := io.ReadAll(res.Body)
-		res.Body.Close()
-
-		if err != nil {
-			log.Fatal("err reading body", err)
-		}
-
-		// decoder := json.NewDecoder(req.Body)
-
-		var pdata []polymarketdata
-
-		// err = json.NewDecoder(res.Body).Decode(&pdata)
-
-		// if err := decoder.Decode(&pdata); err != nil {
-		// 	if err == io.EOF {
-		// 		return
-		// 	}
-		// 	log.Println("decode err", err)
-		// 	return
-		// }
-
-		if err = json.Unmarshal(body, &pdata); err != nil {
-			log.Fatal("err unmarshal poly:", err)
-		}
-		// prettyjson, err := json.MarshalIndent(pdata, " ", "  ")
-		// if err != nil {
-		// 	log.Fatal("err marshalIndent:", err)
-		// }
-		// log.Println("poly", string(prettyjson))
-		// fmt.Println("Received", string(prettyjson))
-		fmt.Println("fetched at:", time.Now())
-
-		time.Sleep(time.Second)
-
-		json_chan <- pdata
+	res, err := apiClient.Do(req)
+	if err != nil {
+		log.Fatal("err getting a res", err)
 	}
+
+	// creating a new decoder for incmin json data stream
+	body, err := io.ReadAll(res.Body)
+	res.Body.Close()
+
+	if err != nil {
+		log.Fatal("err reading body", err)
+	}
+
+	// decoder := json.NewDecoder(req.Body)
+
+	var pdata []polymarketdata
+
+	// err = json.NewDecoder(res.Body).Decode(&pdata)
+
+	// if err := decoder.Decode(&pdata); err != nil {
+	// 	if err == io.EOF {
+	// 		return
+	// 	}
+	// 	log.Println("decode err", err)
+	// 	return
+	// }
+
+	if err = json.Unmarshal(body, &pdata); err != nil {
+		log.Fatal("err unmarshal poly:", err)
+	}
+	// prettyjson, err := json.MarshalIndent(pdata, " ", "  ")
+	// if err != nil {
+	// 	log.Fatal("err marshalIndent:", err)
+	// }
+	// log.Println("poly", string(prettyjson))
+	// fmt.Println("Received", string(prettyjson))
+	// fmt.Println("fetched at:", time.Now())
+
+	time.Sleep(time.Second)
+
+	json_chan <- pdata
 
 }
