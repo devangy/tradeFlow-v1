@@ -39,13 +39,13 @@ func main() {
 
 	// creating a struct instance using a struct literal in memory
 	apiClient := &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
 			Proxy: http.ProxyURL(proxy),
 		},
 	}
 
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 
 	defer ticker.Stop()
 
@@ -99,18 +99,25 @@ func main() {
 
 func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
 	// new request
+
 	req, err := http.NewRequest("GET", events_API, nil)
 	if err != nil {
 		log.Fatalf("Err making get req: %v", err)
 	}
 
 	// query params
+	//
 	params := req.URL.Query()
 	params.Add("limit", "5")
+	params.Add("status", "open")
 	params.Add("with_nested_markets", "true")
-	req.URL.RawQuery = params.Encode() // form full URL to make call
+
+	req.URL.RawQuery = params.Encode() // form full URL to make call\
+
+	fmt.Println(req.URL.Query())
 
 	res, err := apiClient.Do(req)
+	fmt.Println("url", res.Request.URL)
 	if err != nil {
 		log.Fatalf("Err getting res: %v ", err)
 	}
@@ -143,22 +150,20 @@ func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
 	// initial data struct
 	type kmarketdata struct {
 		Events []Event
+		Cursor string `json:"cursor"`
 	}
 	var kdata kmarketdata
+
+	// json.NewDecoder(res.Body).Decode(&kdata)
 
 	// unmarshall
 	if err = json.Unmarshal(body, &kdata); err != nil {
 		log.Fatalf("Error unmarshalling: %v", err)
 	}
-
-	// pretty print json
-	// prettyjson, err := json.MarshalIndent(kdata, " ", "  ")
-	// if err != nil {
-	// 	log.Fatal("Unable to prettyjson")
-	// 	panic(err)
-	// }
-
-	// fmt.Println("res:", string(prettyjson))
+	fmt.Println("RECEIVED CURSOR:", kdata.Cursor)
+	cursor := ""
+	cursor = kdata.Cursor
+	params.Add("cursor", cursor)
 
 	json_chan <- kdata
 }
@@ -176,6 +181,10 @@ func poly(events_api string, apiClient *http.Client, json_chan chan any) {
 		Volume   float64 `json:"volume"`
 		Image    string  `json:"image"`
 	}
+
+	params := req.URL.Query()
+
+	params.Add("closed", "false")
 
 	res, err := apiClient.Do(req)
 	if err != nil {

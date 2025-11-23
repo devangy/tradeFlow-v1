@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/mymmrac/telego"
 	th "github.com/mymmrac/telego/telegohandler"
@@ -19,8 +18,7 @@ func Bot(jsonCh <-chan any) {
 	}
 
 	// context with a timeout for cancellation of request
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	bot, err := telego.NewBot(botToken, telego.WithDefaultDebugLogger())
 	if err != nil {
@@ -36,7 +34,7 @@ func Bot(jsonCh <-chan any) {
 
 	fmt.Printf("Bot user: %+v\n", botUser)
 
-	// updates from bot
+	// updates from bot via long polling for testing
 	updates, _ := bot.UpdatesViaLongPolling(ctx, nil)
 
 	// // processing updates one by one
@@ -46,23 +44,40 @@ func Bot(jsonCh <-chan any) {
 
 	// bot handler to handle req
 	bh, _ := th.NewBotHandler(bot, updates)
+
 	defer func() { _ = bh.Stop() }()
 
 	// Register new handler with match on command `/start`
-	bh.Handle(func(ctx *th.Context, update telego.Update) error {
-		_, _ = ctx.Bot().SendMessage(ctx, tu.Message(
-			tu.ID(update.Message.Chat.ID),
-			fmt.Sprintf("Hello %s!", update.Message.From.FirstName),
+	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
+		// Send a message with inline keyboard
+		_, _ = ctx.Bot().SendMessage(ctx, tu.Messagef(
+			tu.ID(message.Chat.ID),
+			`Hello %s !  Welcome to DataLog`, message.From.FirstName,
+		).WithReplyMarkup(tu.InlineKeyboard(
+			tu.InlineKeyboardRow(tu.InlineKeyboardButton("Start").WithCallbackData("all_events"))),
 		))
 		return nil
 	}, th.CommandEqual("start"))
 
+	// Register new handler with match on a call back query with data equal to `go` and non-nil message
+	bh.HandleCallbackQuery(func(ctx *th.Context, query telego.CallbackQuery) error {
+
+		for message := range jsonCh {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Messagef(
+				tu.ID(query.Message.GetChat().ID),
+				"Received: %v", message,
+			))
+		}
+
+		// _, _ = bot.SendMessage(ctx, tu.Messagef(tu.ID(query.Message.GetChat().ChatID().ID), "e: %s", single))
+
+		// Answer callback query
+		_ = bot.AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID).WithText("Done"))
+
+		return nil
+
+	}, th.AnyCallbackQueryWithMessage(), th.CallbackDataEqual("all_events"))
+
 	bh.Start()
-
-	defer bh.Stop()
-
-	// for msg := range jsonCh {
-	// 	fmt.Println("Received JSON:", msg)
-	// }
 
 }
