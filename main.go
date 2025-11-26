@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -48,14 +47,10 @@ func main() {
 		},
 	}
 
-	ticker := time.NewTicker(1 * time.Second)
-
-	defer ticker.Stop()
-
 	// channel for receiving data
 	json_chan := make(chan any, 200)
 
-	go Bot(json_chan)
+	go Bot()
 
 	go func() {
 
@@ -74,33 +69,31 @@ func main() {
 		}
 		defer file.Close()
 
-		// json encoder for writing directly to file
-		encoder := json.NewEncoder(file)
-		// encoder.SetIndent("", " ") // make json pretty
-
-		// handler := slog.NewTextHandler(os.Stdout, nil)
-		// logger := slog.New(handler)
 		// slog.SetDefault(logger)
-		// buff scanner for scanning each line
-		scanner := bufio.NewScanner(file)
+
+		// open file again for scannning lines
+		scanFile, err := os.Open("output.jsonl")
+		if err != nil {
+			log.Fatalln("err opening scanFile", err)
+		}
+		scanner := bufio.NewScanner(scanFile)
+		defer scanFile.Close()
 
 		// map for storing hash of string with boolean
-		seenHash := make(map[string]bool)
-
-		fmt.Println()
+		seenHash := make(map[[32]byte]bool)
 
 		for scanner.Scan() {
 			line := scanner.Text()
 			fmt.Println("line", line)
-			// hash line
+			// hashing each line using sha256
 			hashLine := sha256.Sum256([]byte(line))
-			stringHash := hex.EncodeToString(hashLine[:])
+			// encoding the hash back to string for checking if it exists in our map
+			// stringHash := hex.EncodeToString(hashLine[:])
 
 			fmt.Println("hashLine", hashLine)
-			fmt.Println("stringHash", stringHash)
+			// fmt.Println("stringHash", stringHash)
 			// check in hashmap if seen Hash before
-			seenHash[stringHash] = true
-
+			seenHash[hashLine] = true
 		}
 
 		for chdata := range json_chan {
@@ -112,22 +105,27 @@ func main() {
 
 			// conv raw bytes to string
 			jsonLine := string(jsonBytes)
-
 			// hash each line
-			hashLine := sha256.Sum256([]byte(jsonLine))
+			hashBytes := sha256.Sum256([]byte(jsonLine))
 			// convert hashed lines back to string
-			stringHash := hex.EncodeToString(hashLine[:])
-
-			if seenHash[stringHash] {
+			// stringHash := hex.EncodeToString(hashLine[:])
+			// if the hash is in our map print and move to next iteration and check again
+			if seenHash[hashBytes] {
 				fmt.Println("Duplicate found")
 				continue
 			}
 
 			// mark hash seen
-			seenHash[stringHash] = true
+			seenHash[hashBytes] = true
+			// fmt.Println("map:", seenHash[stringHash])
 
-			if err = encoder.Encode(chdata); err != nil {
-				log.Fatalln("err encoding data to file:", err)
+			// json encoder for writing directly to file
+			// Write the bytes we already have + a newline
+			if _, err := file.Write(jsonBytes); err != nil {
+				log.Println("Write error:", err)
+			}
+			if _, err := file.WriteString("\n"); err != nil {
+				log.Println("Write error:", err)
 			}
 			// slog.Info("LOG", chdata)
 
@@ -135,20 +133,26 @@ func main() {
 		fmt.Println("Finished writing data to output file")
 	}()
 
-	for range ticker.C {
-		go kalshi(kalshi_events_API, apiClient, json_chan)
-		go poly(poly_events_API, apiClient, json_chan)
-	}
+	// var wg sync.WaitGroup
+	// wg.Add(2)
+	go kalshi(kalshi_events_API, apiClient, json_chan)
+	go poly(poly_events_API, apiClient, json_chan)
+	// wg.Done()
+	// block main forever so program doesnt exit
+	select {}
 
 }
 
 func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
-	// new request
-	//
+
+	ticker := time.NewTicker(5 * time.Second)
+
+	defer ticker.Stop()
+
 	cursor := ""
 
-	for {
-		ptr := &cursor
+	for range ticker.C {
+		// ptr := &cursor
 
 		req, err := http.NewRequest("GET", events_API, nil)
 		if err != nil {
@@ -157,7 +161,7 @@ func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
 
 		// query params
 		params := req.URL.Query()
-		params.Add("limit", "5")
+		params.Add("limit", "200")
 		params.Add("status", "open")
 		params.Add("with_nested_markets", "true")
 		params.Add("cursor", cursor)
@@ -165,11 +169,11 @@ func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
 		req.URL.RawQuery = params.Encode() // form full URL to make call\
 
 		fmt.Println(req.URL.Query())
-
 		res, err := apiClient.Do(req)
-		fmt.Println("url", res.Request.URL)
+		// fmt.Println("url", res.Request.URL)
 		if err != nil {
-			log.Fatalf("Err getting res: %v ", err)
+			log.Printf("Err getting res: %v", err)
+			continue // Skip this loop iteration, try again next tick
 		}
 
 		defer res.Body.Close() // close connection before exiting
@@ -197,96 +201,98 @@ func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
 		}
 
 		// initial data struct
-		type kmarketdata struct {
+		type kdump struct {
 			Events []Event
 			Cursor string `json:"cursor"`
 		}
-		var kdata kmarketdata
+		var kdata kdump
 
 		// if err := json.NewDecoder(res.Body).Decode(&kdata); err != nil {
 		// 	log.Fatalf("Error decoding: %v", err)
 
-		// }
-
 		if err = json.Unmarshal(body, &kdata); err != nil {
 			log.Fatalf("Error unmarshalling: %v", err)
 		}
-		fmt.Println("RECEIVED CURSOR:", kdata.Cursor)
-		fmt.Println("Data:", kdata)
 
-		*ptr = kdata.Cursor
-		fmt.Println("ptr", ptr)
+		// if err = json.Unmarshal(kdata , &kdatamain); err != nil {
+		// 	log.Fatalf("err unmarshal")
+		// }
+		fmt.Println("RECEIVED CURSOR:", kdata.Cursor)
+		// fmt.Println("Data:", kdata)
+
+		// *ptr = kdata.Cursor
+		params.Set("cursor", kdata.Cursor)
+		// fmt.Println("ptr", ptr)
 		cursor = kdata.Cursor
 		fmt.Println("cursor", cursor)
 
-		json_chan <- kdata
-
-		time.Sleep(5 * time.Second)
+		for _, event := range kdata.Events {
+			json_chan <- event
+		}
 
 	}
 
 }
 
 func poly(events_api string, apiClient *http.Client, json_chan chan any) {
-	req, err := http.NewRequest("GET", events_api, nil)
-	if err != nil {
-		log.Fatal("err making poly GET req", err)
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+
+	defer ticker.Stop()
+
+	for range ticker.C {
+		req, err := http.NewRequest("GET", events_api, nil)
+		if err != nil {
+			log.Fatal("err making poly GET req", err)
+		}
+
+		// structs
+
+		type polymarketdata struct {
+			Title    string  `json:"title"`
+			Category string  `json:"category"`
+			Volume   float64 `json:"volume"`
+			Image    string  `json:"image"`
+		}
+
+		params := req.URL.Query()
+
+		params.Add("closed", "false")
+
+		res, err := apiClient.Do(req)
+		if err != nil {
+			log.Fatal("err getting a res", err)
+		}
+
+		// creating a new decoder for incmin json data stream
+		body, err := io.ReadAll(res.Body)
+		res.Body.Close()
+
+		if err != nil {
+			log.Fatal("err reading body", err)
+		}
+
+		// decoder := json.NewDecoder(req.Body)
+
+		var pdata []polymarketdata
+
+		// err = json.NewDecoder(res.Body).Decode(&pdata)
+
+		// if err := decoder.Decode(&pdata); err != nil {
+		// 	if err == io.EOF {
+		// 		return
+		// 	}
+		// 	log.Println("decode err", err)
+		// 	return
+		// }
+
+		if err = json.Unmarshal(body, &pdata); err != nil {
+			log.Fatal("err unmarshal poly:", err)
+		}
+
+		for _, event := range pdata {
+			json_chan <- event
+		}
 	}
-
-	// structs
-	//
-
-	type polymarketdata struct {
-		Title    string  `json:"title"`
-		Category string  `json:"category"`
-		Volume   float64 `json:"volume"`
-		Image    string  `json:"image"`
-	}
-
-	params := req.URL.Query()
-
-	params.Add("closed", "false")
-
-	res, err := apiClient.Do(req)
-	if err != nil {
-		log.Fatal("err getting a res", err)
-	}
-
-	// creating a new decoder for incmin json data stream
-	body, err := io.ReadAll(res.Body)
-	res.Body.Close()
-
-	if err != nil {
-		log.Fatal("err reading body", err)
-	}
-
-	// decoder := json.NewDecoder(req.Body)
-
-	var pdata []polymarketdata
-
-	// err = json.NewDecoder(res.Body).Decode(&pdata)
-
-	// if err := decoder.Decode(&pdata); err != nil {
-	// 	if err == io.EOF {
-	// 		return
-	// 	}
-	// 	log.Println("decode err", err)
-	// 	return
-	// }
-
-	if err = json.Unmarshal(body, &pdata); err != nil {
-		log.Fatal("err unmarshal poly:", err)
-	}
-	// prettyjson, err := json.MarshalIndent(pdata, " ", "  ")
-	// if err != nil {
-	// 	log.Fatal("err marshalIndent:", err)
-	// }
-	// log.Println("poly", string(prettyjson))
-	// fmt.Println("Received", string(prettyjson))
-	// fmt.Println("fetched at:", time.Now())
-
-	time.Sleep(time.Second)
-
-	json_chan <- pdata
 
 }
