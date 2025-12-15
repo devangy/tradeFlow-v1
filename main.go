@@ -1,15 +1,16 @@
 package main
 
 import (
-	"bufio"
-	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+
 	"path/filepath"
 	"time"
 
@@ -47,91 +48,102 @@ func main() {
 		},
 	}
 
-	// channel for receiving data
+	// channel where both api will send the json
 	json_chan := make(chan any, 200)
 
-	go Bot()
+	// ctx := context.Background()
 
-	go func() {
+	// go Bot()
 
-		// opening a file with append mode for writing data continuously
-		// flags append at the end, create if file dont exist and write only to file
-		// 0644 unix mode file permision read write execute
-		// dir, err := os.Getwd()
-		dir, err := os.Getwd()
-		if err != nil {
-			panic(err)
-		}
+	go processJson(json_chan)
 
-		file, err := os.OpenFile(filepath.Join(dir, "output.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			log.Fatalln("Err opening file:", err)
-		}
-		defer file.Close()
+	// go func() {
 
-		// slog.SetDefault(logger)
+	// 	// opening a file with append mode for writing data continuously
+	// 	// flags append at the end, create if file dont exist and write only to file
+	// 	// 0644 unix mode file permision read write execute
+	// 	// dir, err := os.Getwd()
+	// 	dir, err := os.Getwd()
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
 
-		// open file again for scannning lines
-		scanFile, err := os.Open("output.jsonl")
-		if err != nil {
-			log.Fatalln("err opening scanFile", err)
-		}
-		scanner := bufio.NewScanner(scanFile)
-		defer scanFile.Close()
+	// 	file, err := os.OpenFile(filepath.Join(dir, "output.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// 	if err != nil {
+	// 		log.Fatalln("Err opening file:", err)
+	// 	}
+	// 	defer file.Close()
 
-		// map for storing hash of string with boolean
-		seenHash := make(map[[32]byte]bool)
+	// 	// slog.SetDefault(logger)
 
-		for scanner.Scan() {
-			line := scanner.Text()
-			fmt.Println("line", line)
-			// hashing each line using sha256
-			hashLine := sha256.Sum256([]byte(line))
-			// encoding the hash back to string for checking if it exists in our map
-			// stringHash := hex.EncodeToString(hashLine[:])
+	// 	// open file again for scannning lines
+	// 	scanFile, err := os.Open("output.jsonl")
+	// 	if err != nil {
+	// 		log.Fatalln("err opening scanFile", err)
+	// 	}
+	// 	defer scanFile.Close()
 
-			fmt.Println("hashLine", hashLine)
-			// fmt.Println("stringHash", stringHash)
-			// check in hashmap if seen Hash before
-			seenHash[hashLine] = true
-		}
+	// 	// scanner := bufio.NewScanner(scanFile)
 
-		for chdata := range json_chan {
+	// 	// map for storing hash of string with boolean
+	// 	seenHash := make(map[[32]byte]bool)
 
-			jsonBytes, err := json.Marshal(chdata)
-			if err != nil {
-				panic(1)
-			}
+	// 	jdecoder := json.NewDecoder(scanFile)
 
-			// conv raw bytes to string
-			jsonLine := string(jsonBytes)
-			// hash each line
-			hashBytes := sha256.Sum256([]byte(jsonLine))
-			// convert hashed lines back to string
-			// stringHash := hex.EncodeToString(hashLine[:])
-			// if the hash is in our map print and move to next iteration and check again
-			if seenHash[hashBytes] {
-				fmt.Println("Duplicate found")
-				continue
-			}
+	// 	for {
+	// 		err := jdecoder.Decode()
+	// 	}
 
-			// mark hash seen
-			seenHash[hashBytes] = true
-			// fmt.Println("map:", seenHash[stringHash])
+	// 	for scanner.Scan() {
+	// 		line := scanner.Text()
+	// 		fmt.Println("line", line)
+	// 		// hashing each line using sha256
+	// 		hashLine := sha256.Sum256([]byte(line))
+	// 		// encoding the hash back to string for checking if it exists in our map
+	// 		// stringHash := hex.EncodeToString(hashLine[:])
 
-			// json encoder for writing directly to file
-			// Write the bytes we already have + a newline
-			if _, err := file.Write(jsonBytes); err != nil {
-				log.Println("Write error:", err)
-			}
-			if _, err := file.WriteString("\n"); err != nil {
-				log.Println("Write error:", err)
-			}
-			// slog.Info("LOG", chdata)
+	// 		fmt.Println("hashLine", hashLine)
+	// 		// fmt.Println("stringHash", stringHash)
+	// 		// check in hashmap if seen Hash before
+	// 		seenHash[hashLine] = true
+	// 	}
 
-		}
-		fmt.Println("Finished writing data to output file")
-	}()
+	// 	for chdata := range json_chan {
+
+	// 		jsonBytes, err := json.Marshal(chdata)
+	// 		if err != nil {
+	// 			panic(1)
+	// 		}
+
+	// 		// conv raw bytes to string
+	// 		jsonLine := string(jsonBytes)
+	// 		// hash each line
+	// 		hashBytes := sha256.Sum256([]byte(jsonLine))
+	// 		// convert hashed lines back to string
+	// 		// stringHash := hex.EncodeToString(hashLine[:])
+	// 		// if the hash is in our map print and move to next iteration and check again
+	// 		if seenHash[hashBytes] {
+	// 			fmt.Println("Duplicate found")
+	// 			continue
+	// 		}
+
+	// 		// mark hash seen
+	// 		seenHash[hashBytes] = true
+	// 		// fmt.Println("map:", seenHash[stringHash])
+
+	// 		// json encoder for writing directly to file
+	// 		// Write the bytes we already have + a newline
+	// 		if _, err := file.Write(jsonBytes); err != nil {
+	// 			log.Println("Write error:", err)
+	// 		}
+	// 		if _, err := file.WriteString("\n"); err != nil {
+	// 			log.Println("Write error:", err)
+	// 		}
+	// 		// slog.Info("LOG", chdata)
+
+	// 	}
+	// 	fmt.Println("Finished writing data to output file")
+	// }()
 
 	// var wg sync.WaitGroup
 	// wg.Add(2)
@@ -145,7 +157,7 @@ func main() {
 
 func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
 
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 
 	defer ticker.Stop()
 
@@ -181,7 +193,7 @@ func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
 
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
-			log.Fatal("Error reading from res Body")
+			log.Panic("Error reading from res Body:", err)
 		}
 
 		// type Market struct {
@@ -194,6 +206,7 @@ func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
 		// }
 
 		type Event struct {
+			Name         string
 			Title        string `json:"title"`
 			EventTicker  string `json:"event_ticker"`
 			SeriesTicker string `json:"series_ticker"`
@@ -227,6 +240,7 @@ func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
 		fmt.Println("cursor", cursor)
 
 		for _, event := range kdata.Events {
+			event.Name = "kalshi"
 			json_chan <- event
 		}
 
@@ -236,7 +250,7 @@ func kalshi(events_API string, apiClient *http.Client, json_chan chan any) {
 
 func poly(events_api string, apiClient *http.Client, json_chan chan any) {
 
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(1 * time.Second)
 
 	defer ticker.Stop()
 
@@ -249,6 +263,7 @@ func poly(events_api string, apiClient *http.Client, json_chan chan any) {
 		// structs
 
 		type polymarketdata struct {
+			Name     string
 			Title    string  `json:"title"`
 			Category string  `json:"category"`
 			Volume   float64 `json:"volume"`
@@ -291,8 +306,74 @@ func poly(events_api string, apiClient *http.Client, json_chan chan any) {
 		}
 
 		for _, event := range pdata {
+			event.Name = "poly"
 			json_chan <- event
 		}
 	}
+}
 
+func processJson(json_chan chan any) {
+	// get current dir path
+	//
+
+	directory, err := os.Getwd()
+	if err != nil {
+		log.Fatal("Unable to get current directory path", err)
+	}
+
+	// create a file or open existing output.jsonl file for writing data
+	file, err := os.OpenFile(filepath.Join(directory, "hashes.bin"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Fatal("Unable opening file for writing", err)
+	}
+
+	defer file.Close()
+
+	// empty hashmap for keeping track of seen hashes with struct as it takes 0 bytes for storage and we care about only the key
+	seenMap := make(map[uint64]struct{})
+
+	// start processing json
+	for jdata := range json_chan {
+
+		log.Print("JSONLoop:", jdata)
+
+		// convert incoming json to bytes
+		jsonBytes, err := json.Marshal(jdata)
+		if err != nil {
+			log.Fatal("failed converting to jsonBytes", err)
+		}
+
+		// init fnv-1a hashing state object
+		fnvH := fnv.New64a()
+		// hash each json data coming in
+		fnvH.Write(jsonBytes)
+		// output hashes
+		jsonHashValue := fnvH.Sum64()
+
+		log.Print("JsonHashValue", jsonHashValue)
+
+		// if hash seen before jump to next item
+		if _, exists := seenMap[jsonHashValue]; exists {
+			log.Print("duplicate found")
+			continue
+		}
+
+		// allocate buffer of size 8 bytes
+		var buff [8]byte
+
+		// put the hash value in the buffer in BigEndian byte order
+		binary.BigEndian.PutUint64(buff[:], jsonHashValue)
+
+		// add hashes to our map to track seen keys
+		// The empty struct takes zero bytes of memory. It has no fields, so it holds no data.
+		// struct{}{} we care about only if key exists in collection
+		// a way of creating a set data type in Go
+		seenMap[jsonHashValue] = struct{}{}
+
+		_, err = file.WriteString(string(buff[:]))
+		if err != nil {
+			log.Fatal("failed to write buffer to file", err)
+		}
+
+	}
 }
