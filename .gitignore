@@ -32,3 +32,6 @@ output.jsonl
 # Editor/IDE
 # .idea/
 # .vscode/
+
+#logs dir
+logs/
