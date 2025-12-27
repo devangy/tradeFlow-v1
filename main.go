@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -57,10 +58,10 @@ func main() {
 	// entryPoint := os.Getenv("entryPoint")
 
 	// Markets
-	kalshi_events_API := os.Getenv("kalshi_events_API")
-	poly_events_API := os.Getenv("poly_events_API")
+	// kalshi_events_API := os.Getenv("kalshi_events_API")
+	// poly_events_API := os.Getenv("poly_events_API")
 	poly_trades_API := os.Getenv("poly_trades_API")
-	poly_profile_API := os.Getenv("poly_walletprofile_API")
+	poly_profile_API := os.Getenv("poly_walletProfile_API")
 	// kalshi_trades_API := os.Getenv("kalshi_trades_API")
 
 	// proxy server provider URL for rotating proxy
@@ -83,26 +84,26 @@ func main() {
 	}
 
 	// channel where both api will send the json
-	events_chan := make(chan any, 200)
-	// Telegram channel for clean and filtered data according to logic applied
-	tgEventC := make(chan any, 200)
+	// events_chan := make(chan any, 200)
+	// // Telegram channel for clean and filtered data according to logic applied
+	// tgEventC := make(chan any, 200)
 	// trade wallet address chan
-	tradeWalletC := make(chan any, 200)
+	tradeWalletC := make(chan Trade, 200)
 
 	// go Bot(tgEventC)
 
-	go kalshi(kalshi_events_API, apiClient, events_chan)
-	log.Info("Started Kalshi Events Worker")
-	go poly(poly_events_API, apiClient, events_chan)
-	log.Info("Started Poly Events Worker")
+	// go kalshi(kalshi_events_API, apiClient, events_chan)
+	// log.Info("Started Kalshi Events Worker")
+	// go poly(poly_events_API, apiClient, events_chan)
+	// log.Info("Started Poly Events Worker")
 
-	go processEvents(events_chan, tgEventC)
-	log.Info("Started Events Processing Worker")
+	// go processEvents(events_chan, tgEventC)
+	// log.Info("Started Events Processing Worker")
 
-	go polyTrades(poly_trades_API, apiClient)
+	go polyTrades(poly_trades_API, apiClient, tradeWalletC)
 	log.Info("Started Poly Trades Worker")
 
-	go polyWallet(poly_profile_API, apiClient)
+	go polyWallet(poly_profile_API, apiClient, tradeWalletC)
 	log.Info("Started Poly Trades Worker")
 	// go kalshiTrades(kalshi_trades_API, apiClient)
 	// log.Info("Started Kalshi Trades Worker")
@@ -398,7 +399,30 @@ func processEvents(events_chan chan any, tgEventsC chan any) {
 	}
 }
 
-func polyTrades(api string, apiClient *http.Client) {
+type Trade struct {
+	ProxyWallet           string  `json:"proxyWallet"`
+	Side                  string  `json:"side"`
+	Asset                 string  `json:"asset"`
+	ConditionID           string  `json:"conditionId"`
+	Size                  float64 `json:"size"`
+	Price                 float64 `json:"price"`
+	Timestamp             int64   `json:"timestamp"`
+	Title                 string  `json:"title"`
+	Slug                  string  `json:"slug"`
+	Icon                  string  `json:"icon"`
+	EventSlug             string  `json:"eventSlug"`
+	Outcome               string  `json:"outcome"`
+	OutcomeIndex          int     `json:"outcomeIndex"`
+	Name                  string  `json:"name"`
+	Pseudonym             string  `json:"pseudonym"`
+	Bio                   string  `json:"bio"`
+	ProfileImage          string  `json:"profileImage"`
+	ProfileImageOptimized string  `json:"profileImageOptimized"`
+	TransactionHash       string  `json:"transactionHash"`
+	TradeSum              float64
+}
+
+func polyTrades(api string, apiClient *http.Client, tradeWalletC chan Trade) {
 	ticker := time.NewTicker(150 * time.Millisecond)
 
 	directory, err := os.Getwd()
@@ -447,28 +471,28 @@ func polyTrades(api string, apiClient *http.Client) {
 				backoff = 0
 			}
 
-			type Trade struct {
-				ProxyWallet           string  `json:"proxyWallet"`
-				Side                  string  `json:"side"`
-				Asset                 string  `json:"asset"`
-				ConditionID           string  `json:"conditionId"`
-				Size                  float64 `json:"size"`
-				Price                 float64 `json:"price"`
-				Timestamp             int64   `json:"timestamp"`
-				Title                 string  `json:"title"`
-				Slug                  string  `json:"slug"`
-				Icon                  string  `json:"icon"`
-				EventSlug             string  `json:"eventSlug"`
-				Outcome               string  `json:"outcome"`
-				OutcomeIndex          int     `json:"outcomeIndex"`
-				Name                  string  `json:"name"`
-				Pseudonym             string  `json:"pseudonym"`
-				Bio                   string  `json:"bio"`
-				ProfileImage          string  `json:"profileImage"`
-				ProfileImageOptimized string  `json:"profileImageOptimized"`
-				TransactionHash       string  `json:"transactionHash"`
-				TradeSum              float64
-			}
+			// type Trade struct {
+			// 	ProxyWallet           string  `json:"proxyWallet"`
+			// 	Side                  string  `json:"side"`
+			// 	Asset                 string  `json:"asset"`
+			// 	ConditionID           string  `json:"conditionId"`
+			// 	Size                  float64 `json:"size"`
+			// 	Price                 float64 `json:"price"`
+			// 	Timestamp             int64   `json:"timestamp"`
+			// 	Title                 string  `json:"title"`
+			// 	Slug                  string  `json:"slug"`
+			// 	Icon                  string  `json:"icon"`
+			// 	EventSlug             string  `json:"eventSlug"`
+			// 	Outcome               string  `json:"outcome"`
+			// 	OutcomeIndex          int     `json:"outcomeIndex"`
+			// 	Name                  string  `json:"name"`
+			// 	Pseudonym             string  `json:"pseudonym"`
+			// 	Bio                   string  `json:"bio"`
+			// 	ProfileImage          string  `json:"profileImage"`
+			// 	ProfileImageOptimized string  `json:"profileImageOptimized"`
+			// 	TransactionHash       string  `json:"transactionHash"`
+			// 	TradeSum              float64
+			// }
 
 			var trades []Trade
 
@@ -497,16 +521,15 @@ func polyTrades(api string, apiClient *http.Client) {
 
 				thresholds := []float64{500, 1000, 5000, 10000}
 
-				var value float64
-				for _, value = range thresholds {
+				for _, value := range thresholds {
 					if tradeSum >= value {
 						log.Debug("Value:", tradeSum)
 						tradesMap[trades[right].TransactionHash] = struct{}{}
 						trades[right].TradeSum = tradeSum
+						tradeWalletC <- trades[right]
 						prettyJson, _ := json.MarshalIndent(trades[right], "", "  ")
 						log.Debug("LT ❤️:", string(prettyJson))
 						ptradesF.WriteString(string(prettyJson) + "\n")
-
 					}
 				}
 			}
@@ -514,7 +537,7 @@ func polyTrades(api string, apiClient *http.Client) {
 	}
 }
 
-func polyWallet(api string, apiClient *http.Client) {
+func polyWallet(api string, apiClient *http.Client, tradeWalletC chan Trade) {
 	// dir, err := os.Getwd()
 	// if err != nil {
 	// 	log.Error("polyTrades | Error getting dir path:")
@@ -527,6 +550,96 @@ func polyWallet(api string, apiClient *http.Client) {
 	// if err != nil {
 	// 	log.Fatal("Opening hashes file for writing: ", err)
 	// }
+
+	type UserTrades struct {
+		ProxyWallet     string  `json:"proxyWallet"`
+		Asset           string  `json:"asset"`
+		ConditionID     string  `json:"conditionId"`
+		AvgPrice        float64 `json:"avgPrice"`
+		TotalBought     float64 `json:"totalBought"`
+		RealizedPnl     float64 `json:"realizedPnl"`
+		CurPrice        float64 `json:"curPrice"`
+		Timestamp       int64   `json:"timestamp"`
+		Title           string  `json:"title"`
+		Slug            string  `json:"slug"`
+		Icon            string  `json:"icon"`
+		EventSlug       string  `json:"eventSlug"`
+		Outcome         string  `json:"outcome"`
+		OutcomeIndex    int     `json:"outcomeIndex"`
+		OppositeOutcome string  `json:"oppositeOutcome"`
+		OppositeAsset   string  `json:"oppositeAsset"`
+		EndDate         string  `json:"endDate"`
+	}
+
+	// type Trade struct {
+	// 	ProxyWallet           string  `json:"proxyWallet"`
+	// 	Side                  string  `json:"side"`
+	// 	Asset                 string  `json:"asset"`
+	// 	ConditionID           string  `json:"conditionId"`
+	// 	Size                  float64 `json:"size"`
+	// 	Price                 float64 `json:"price"`
+	// 	Timestamp             int64   `json:"timestamp"`
+	// 	Title                 string  `json:"title"`
+	// 	Slug                  string  `json:"slug"`
+	// 	Icon                  string  `json:"icon"`
+	// 	EventSlug             string  `json:"eventSlug"`
+	// 	Outcome               string  `json:"outcome"`
+	// 	OutcomeIndex          int     `json:"outcomeIndex"`
+	// 	Name                  string  `json:"name"`
+	// 	Pseudonym             string  `json:"pseudonym"`
+	// 	Bio                   string  `json:"bio"`
+	// 	ProfileImage          string  `json:"profileImage"`
+	// 	ProfileImageOptimized string  `json:"profileImageOptimized"`
+	// 	TransactionHash       string  `json:"transactionHash"`
+	// 	TradeSum              float64
+	// }
+
+	var users []UserTrades
+
+	// var trades Trade
+
+	// incoming trade struct iteration from channel
+	for trade := range tradeWalletC {
+
+		log.Print("tradePWallet:", trade)
+		// extrac
+
+		go func() {
+			req, err := http.NewRequest("GET", api, nil)
+			if err != nil {
+				log.Error("creating request polyWallet: ", err)
+				return
+			}
+
+			// params
+			params := req.URL.Query()
+			// extract wallet addr from each trade
+			params.Add("user", trade.ProxyWallet)
+			params.Add("limit", strconv.Itoa(100))
+			params.Add("sortBy", "TIMESTAMP")
+			params.Add("sortDirection", "DESC")
+
+			req.URL.RawQuery = params.Encode()
+			log.Print("API:", api)
+
+			res, err := apiClient.Do(req)
+			if err != nil {
+				log.Error("polyWallet - failed to get response: ", err)
+				return
+			}
+
+			log.Info("polyWallet: ", res.StatusCode)
+
+			json.NewDecoder(res.Body).Decode(&users)
+
+			for _, userTrade := range users {
+				log.Debug("user:", userTrade)
+
+			}
+
+		}()
+
+	}
 
 }
 

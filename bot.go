@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/charmbracelet/log"
 	"github.com/mymmrac/telego"
 	th "github.com/mymmrac/telego/telegohandler"
 	tu "github.com/mymmrac/telego/telegoutil"
@@ -14,7 +15,7 @@ func Bot(tgEventC chan any) {
 
 	botToken := os.Getenv("BOT_TOKEN")
 	if botToken == "" {
-		panic("Bot token is empty! Set BOT_TOKEN environment variable.")
+		log.Fatal("Bot token is empty! Set BOT_TOKEN environment variable.")
 	}
 
 	// context with a timeout for cancellation of request
@@ -28,11 +29,10 @@ func Bot(tgEventC chan any) {
 
 	botUser, err := bot.GetMe(ctx)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatal("bot authentication: ", err)
 	}
 
-	fmt.Printf("Bot user: %+v\n", botUser)
+	log.Debug("Bot user: %+v\n", botUser)
 
 	// updates from bot via long polling for testing
 	updates, _ := bot.UpdatesViaLongPolling(ctx, nil)
