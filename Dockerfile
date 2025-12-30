@@ -1,27 +1,45 @@
+
+# MULTISTAGE build setup to reduce the image size to ~10-20MB
+# not exposed to os level vulnerabilities
+
+# STAGE 1 compile
 # golang version alpine image lightweight
-FROM golang:1.24.7-alpine
+FROM golang:1.24.7-alpine AS builder
 
 # work dir /app root inside the container
 WORKDIR /app
 
 # copy to root
-COPY go.mod go.sum ./
+COPY cmd/go.mod cmd/go.sum ./
 
 # download dependencies
-RUN go mod tidy
+RUN go mod download
 
 # copy files fromhost machine to container /app dir
 COPY . .
 
-# create build directory
-RUN mkdir -p build
+# create build
+RUN CGO_ENABLED=0 GOOS=linux go build -o bot-build ./cmd/main.go
 
-# build binary into build dir
-RUN go build -o build/tradeflow
+
+# STAGE 2 copy only build binary from built image
+FROM alpine:latest
+
+
+#  update certificates for HTTPS requests
+RUN apk --no-cache add ca-certificates
+
+# copy only the final build binary from builder stage
+COPY --from=builder /app/bot-build .
+
+# CMD [ "/app/", touch .env ]
+
+
+EXPOSE 8080
+
+#
 
 #readwrite permission to binary
-RUN chmod +x tradeflow
+RUN chmod +x ./bot-build
 
-COPY --from=builder /app/build/tradeflow .
-
-CMD ["./tradeflow"]
+CMD ["./bot-build"]
