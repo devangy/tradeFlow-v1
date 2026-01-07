@@ -2,6 +2,12 @@ services:
     bot:
         build: .
         image: tradeflow:latest
-        env_file:
-            - .env
+        # mapping the shell variables into the container
+        environment:
+            - BOT_TOKEN
+            - kalshi_events_API
+            - poly_events_API
+            - poly_trades_API
+            - poly_walletProfile_API
+            - kalshi_trades_API
         restart: always

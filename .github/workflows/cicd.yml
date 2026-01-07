@@ -10,22 +10,14 @@ jobs:
         steps:
             - name: checkout source
               uses: actions/checkout@v4
-            - name: create .env file and populate via Github secrets
+
+            - name: Deploy directly injecting secrets into shell
               run: |
-                  cat <<EOF > .env
-                  BOT_TOKEN=${{ secrets.BOT_TOKEN }}
-                  username=${{ secrets.username }}
-                  password=${{ secrets.password }}
-                  country=${{ secrets.country }}
-                  entryPoint=${{ secrets.entryPoint }}
+                  docker compose up -d --force-recreate
+                  docker image prune -f
+              env: BOT_TOKEN=${{ secrets.BOT_TOKEN }}
                   kalshi_events_API=${{ secrets.kalshi_events_API }}
                   poly_events_API=${{ secrets.poly_events_API }}
                   poly_trades_API=${{ secrets.poly_trades_API }}
                   poly_walletProfile_API=${{ secrets.poly_walletProfile_API }}
                   kalshi_trades_API=${{ secrets.kalshi_trades_API }}
-                  EOF
-
-            - name: run container with .env
-              run: |
-                  docker compose up -d --force-recreate
-                  docker image prune -f
