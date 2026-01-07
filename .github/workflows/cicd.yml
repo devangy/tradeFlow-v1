@@ -12,12 +12,13 @@ jobs:
               uses: actions/checkout@v4
 
             - name: Deploy directly injecting secrets into shell
-              env: BOT_TOKEN=${{ secrets.BOT_TOKEN }}
-                  kalshi_events_API=${{ secrets.kalshi_events_API }}
-                  poly_events_API=${{ secrets.poly_events_API }}
-                  poly_trades_API=${{ secrets.poly_trades_API }}
-                  poly_walletProfile_API=${{ secrets.poly_walletProfile_API }}
-                  kalshi_trades_API=${{ secrets.kalshi_trades_API }}
+              env:
+                  BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+                  kalshi_events_API: ${{ secrets.kalshi_events_API }}
+                  poly_events_API: ${{ secrets.poly_events_API }}
+                  poly_trades_API: ${{ secrets.poly_trades_API }}
+                  poly_walletProfile_API: ${{ secrets.poly_walletProfile_API }}
+                  kalshi_trades_API: ${{ secrets.kalshi_trades_API }}
               run: |
                   docker compose up -d --force-recreate
                   docker image prune -f
