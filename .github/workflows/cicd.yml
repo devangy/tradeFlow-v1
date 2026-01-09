@@ -20,7 +20,8 @@ jobs:
                   poly_walletProfile_API: ${{ secrets.poly_walletProfile_API }}
                   kalshi_trades_API: ${{ secrets.kalshi_trades_API }}
               run: |
-                  docker compose up -d --force-recreate
                   docker image prune -f
+                  docker compose pull
+                  docker compose up -d --remove-orphans
 
 #############
