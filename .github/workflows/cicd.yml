@@ -6,7 +6,7 @@ on:
             - main
 jobs:
     build:
-        runs-on: self-hosted
+        runs-on: ubuntu
         steps:
             - name: checkout source
               uses: actions/checkout@v4

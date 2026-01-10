@@ -28,10 +28,6 @@ data "aws_vpc" "default" {
   default = true
 }
 
-data "aws_subnet_ids" "default" {
-  vpc_id = data.aws_vpc.default.id
-}
-
 
 // defining our security group here for allowed traffic on our server defined ports
 resource "aws_security_group" "bot_firewall" {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,8 +36,9 @@ func main() {
 	}
 
 	// gradient colors (cyan to violet)
-	startR, startG, startB := 100, 200, 255
-	endR, endG, endB := 190, 120, 255
+	startR, startG, startB := 0, 255, 200 // cyan
+	midR, midG, midB := 120, 120, 255     // violet-blue
+	endR, endG, endB := 120, 255, 120     // neon green
 
 	maxLen := 0
 	for _, line := range banner {
@@ -51,9 +53,18 @@ func main() {
 		for i, ch := range line {
 			t := float64(i) / float64(maxLen)
 
-			r := int(float64(startR) + t*float64(endR-startR))
-			g := int(float64(startG) + t*float64(endG-startG))
-			b := int(float64(startB) + t*float64(endB-startB))
+			var r, g, b int
+			if t < 0.5 {
+				tt := t / 0.5
+				r = int(float64(startR) + tt*float64(midR-startR))
+				g = int(float64(startG) + tt*float64(midG-startG))
+				b = int(float64(startB) + tt*float64(midB-startB))
+			} else {
+				tt := (t - 0.5) / 0.5
+				r = int(float64(midR) + tt*float64(endR-midR))
+				g = int(float64(midG) + tt*float64(endG-midG))
+				b = int(float64(midB) + tt*float64(endB-midB))
+			}
 
 			out.WriteString(fmt.Sprintf("\x1b[38;2;%d;%d;%dm%c", r, g, b, ch))
 		}
@@ -61,6 +72,8 @@ func main() {
 		out.WriteString("\x1b[0m")
 		fmt.Println(out.String())
 	}
+
+	fmt.Print("\n\n")
 
 	fmt.Print("\n\n\n\n")
 
@@ -88,10 +101,10 @@ func main() {
 	// entryPoint := os.Getenv("entryPoint")
 
 	// Markets
-	kalshi_events_API := os.Getenv("kalshi_events_API")
+	// kalshi_events_API := os.Getenv("kalshi_events_API")
 	poly_events_API := os.Getenv("poly_events_API")
-	poly_trades_API := os.Getenv("poly_trades_API")
-	poly_profile_API := os.Getenv("poly_walletProfile_API")
+	// poly_trades_API := os.Getenv("poly_trades_API")
+	// poly_profile_API := os.Getenv("poly_walletProfile_API")
 	// kalshi_trades_API := os.Getenv("kalshi_trades_API")
 
 	// proxy server provider URL for rotating proxy
@@ -114,29 +127,30 @@ func main() {
 	}
 
 	// channel where both api will send the json
-	events_chan := make(chan any, 200)
+	events_chan := make(chan any, 10)
 	// // Telegram channel for clean and filtered data according to logic applied
-	tgEventC := make(chan any, 200)
+	tgEventC := make(chan any, 10)
 	// trade wallet address chan
-	tradeWalletC := make(chan Trade, 200)
+	// tradeWalletC := make(chan Trade, 10)
 
 	go Bot(tgEventC)
 
-	go kalshi(kalshi_events_API, apiClient, events_chan)
+	// go kalshi(kalshi_events_API, apiClient, events_chan)
 	log.Info("Started Kalshi Events Worker")
+
 	go poly(poly_events_API, apiClient, events_chan)
 	log.Info("Started Poly Events Worker")
 
 	go processEvents(events_chan, tgEventC)
 	log.Info("Started Events Processing Worker")
 
-	go polyTrades(poly_trades_API, apiClient, tradeWalletC)
-	log.Info("Started Poly Trades Worker")
+	// go polyTrades(poly_trades_API, apiClient, tradeWalletC)
+	// log.Info("Started Poly Trades Worker")
 
-	go polyWallet(poly_profile_API, apiClient, tradeWalletC)
-	log.Info("Started Poly Trades Worker")
-	// go kalshiTrades(kalshi_trades_API, apiClient)
-	log.Info("Started Kalshi Trades Worker")
+	// go polyWallet(poly_profile_API, apiClient, tradeWalletC)
+	// log.Info("Started Poly Trades Worker")
+	// // go kalshiTrades(kalshi_trades_API, apiClient)
+	// log.Info("Started Kalshi Trades Worker")
 
 	select {}
 }
@@ -147,9 +161,10 @@ func kalshi(events_API string, apiClient *http.Client, events_chan chan any) {
 
 	defer ticker.Stop()
 
+	cursor := ""
 	for range ticker.C {
-		cursor := ""
 
+		// log.Debug("prevcursor: ", prevcursor)
 		go func() {
 			req, err := http.NewRequest("GET", events_API, nil)
 			if err != nil {
@@ -159,7 +174,7 @@ func kalshi(events_API string, apiClient *http.Client, events_chan chan any) {
 
 			// query params
 			params := req.URL.Query()
-			params.Add("limit", "200")
+			params.Add("limit", "10")
 			params.Add("status", "open")
 			params.Add("with_nested_markets", "true")
 			params.Add("cursor", cursor)
@@ -171,7 +186,6 @@ func kalshi(events_API string, apiClient *http.Client, events_chan chan any) {
 			if err != nil {
 				log.Debug("Kalshi statcode: ", res.StatusCode)
 				log.Error("failed response Kalshi Events", err)
-				return
 			}
 
 			defer res.Body.Close()
@@ -188,6 +202,12 @@ func kalshi(events_API string, apiClient *http.Client, events_chan chan any) {
 				time.Sleep(backoff)
 				backoff = 0
 			}
+
+			// if cursor == "" {
+			// 	log.Debug("Cursor empty boiii")
+			// 	time.Sleep(2 * time.Second)
+			// 	continue
+			// }
 
 			// read from the Body
 			//
@@ -236,7 +256,14 @@ func kalshi(events_API string, apiClient *http.Client, events_chan chan any) {
 			// *ptr = kdata.Cursor
 			params.Set("cursor", kdata.Cursor)
 			// fmt.Println("ptr", ptr)
+			//
+
 			cursor = kdata.Cursor
+
+			if cursor == "" {
+				params.Set("cursor", cursor)
+			}
+
 			log.Debug("CursorValue: ", cursor)
 
 			for _, event := range kdata.Events {
@@ -252,9 +279,12 @@ func kalshi(events_API string, apiClient *http.Client, events_chan chan any) {
 
 func poly(events_api string, apiClient *http.Client, events_chan chan any) {
 
-	ticker := time.NewTicker(150 * time.Millisecond)
+	ticker := time.NewTicker(1 * time.Second)
 
 	defer ticker.Stop()
+
+	limit := 50
+	offset := 0
 
 	for range ticker.C {
 
@@ -277,6 +307,11 @@ func poly(events_api string, apiClient *http.Client, events_chan chan any) {
 			params := req.URL.Query()
 
 			params.Add("closed", "false")
+			params.Set("limit", strconv.Itoa(limit))
+			params.Set("offset", strconv.Itoa(offset))
+			req.URL.RawQuery = params.Encode()
+
+			offset += limit
 
 			res, err := apiClient.Do(req)
 			if err != nil {
@@ -285,18 +320,25 @@ func poly(events_api string, apiClient *http.Client, events_chan chan any) {
 			}
 
 			// creating a new decoder for incmin json data stream
-			body, err := io.ReadAll(res.Body)
-			defer res.Body.Close()
+			// body, err := io.ReadAll(res.Body)
+			// // defer res.Body.Close()
 
-			if err != nil {
-				log.Error("[PolyEvents] | Reading body", err)
-			}
+			// if err != nil {
+			// 	log.Error("[PolyEvents] | Reading body", err)
+			// }
 
 			var pdata []polymarketdata
 
 			// decoder := json.NewDecoder(req.Body)
 
 			err = json.NewDecoder(res.Body).Decode(&pdata)
+			res.Body.Close()
+
+			if len(pdata) == 0 {
+				log.Info("[PolyEvents] no more data, stopping pagination")
+				offset = 0 // or break if one-time scan
+				return
+			}
 
 			// if err := decoder.Decode(&pdata); err != nil {
 			// 	if err == io.EOF {
@@ -306,9 +348,9 @@ func poly(events_api string, apiClient *http.Client, events_chan chan any) {
 			// 	return
 			// }
 
-			if err = json.Unmarshal(body, &pdata); err != nil {
-				log.Error("err unmarshal poly:", err)
-			}
+			// if err = json.Unmarshal(body, &pdata); err != nil {
+			// 	log.Error("err unmarshal poly:", err)
+			// }
 
 			for _, event := range pdata {
 				event.Name = "poly"
@@ -338,6 +380,9 @@ func processEvents(events_chan chan any, tgEventsC chan any) {
 	}
 
 	defer file.Close()
+
+	limiter := time.NewTicker(500 * time.Millisecond)
+	defer limiter.Stop()
 
 	// empty hashmap for keeping track of seen hashes with struct as it takes 0 bytes for storage and we care about only the key
 	seenMap := make(map[uint64]struct{})
@@ -402,6 +447,7 @@ func processEvents(events_chan chan any, tgEventsC chan any) {
 			log.Debug("Duplicate found skipping")
 			continue
 		}
+		<-limiter.C
 
 		// send only fresh data to Tg bot
 		tgEventsC <- jdata

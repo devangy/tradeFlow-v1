@@ -22,7 +22,8 @@ RUN go mod download
 COPY . .
 
 # create build
-RUN CGO_ENABLED=0 GOOS=linux go build -o bot-build ./cmd
+RUN CGO_ENABLED=0 GOOS=linux GOMAXPROCS=1 \
+    go build -p=1 -o bot-build ./cmd
 
 
 # STAGE 2 copy only build binary from built image
