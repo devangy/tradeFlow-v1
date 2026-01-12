@@ -179,7 +179,7 @@ func Bot(tgEventC chan JData, walletStatsC chan WalletStats) {
 					log.Error("Failed to send message:", err)
 				}
 
-				time.Sleep(200 * time.Millisecond)
+				time.Sleep(1 * time.Second)
 			}
 		}()
 

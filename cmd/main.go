@@ -127,13 +127,13 @@ func main() {
 	}
 
 	// channel where both api will send the json
-	events_chan := make(chan JData, 10)
+	events_chan := make(chan JData, 200)
 	// // Telegram channel for clean and filtered data according to logic applied
-	tgEventC := make(chan JData, 10)
+	tgEventC := make(chan JData, 200)
 	// trade wallet address chan
-	tradeWalletC := make(chan Trade, 10)
+	tradeWalletC := make(chan Trade, 50)
 
-	walletStatsC := make(chan WalletStats, 10)
+	walletStatsC := make(chan WalletStats, 50)
 
 	go Bot(tgEventC, walletStatsC)
 
@@ -169,7 +169,7 @@ type JData struct {
 
 func kalshi(events_API string, apiClient *http.Client, events_chan chan JData) {
 
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 
 	defer ticker.Stop()
 
@@ -186,18 +186,23 @@ func kalshi(events_API string, apiClient *http.Client, events_chan chan JData) {
 
 			// query params
 			params := req.URL.Query()
-			params.Add("limit", "10")
+			params.Add("limit", "50")
 			params.Add("status", "open")
 			params.Add("with_nested_markets", "true")
-			params.Add("cursor", cursor)
+
+			if cursor != "" {
+				params.Set("cursor", cursor)
+			}
 
 			req.URL.RawQuery = params.Encode() // form full URL to make call\
 
 			log.Debug("Kalshi req query: ", req.URL.Query())
 			res, err := apiClient.Do(req)
+			log.Debug("Kalshi statcode: ", res.StatusCode)
+
 			if err != nil {
-				log.Debug("Kalshi statcode: ", res.StatusCode)
 				log.Error("failed response Kalshi Events", err)
+				return
 			}
 
 			defer res.Body.Close()
@@ -206,7 +211,7 @@ func kalshi(events_API string, apiClient *http.Client, events_chan chan JData) {
 			var backoff time.Duration
 
 			if res.StatusCode == http.StatusTooManyRequests {
-				backoff = 15 * time.Second
+				backoff = 10 * time.Second
 				return
 			}
 
@@ -272,10 +277,6 @@ func kalshi(events_API string, apiClient *http.Client, events_chan chan JData) {
 
 			cursor = kdata.Cursor
 
-			if cursor == "" {
-				params.Set("cursor", cursor)
-			}
-
 			log.Debug("CursorValue: ", cursor)
 
 			for _, event := range kdata.Events {
@@ -298,7 +299,7 @@ func kalshi(events_API string, apiClient *http.Client, events_chan chan JData) {
 
 func poly(events_api string, apiClient *http.Client, events_chan chan JData) {
 
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 
 	defer ticker.Stop()
 
@@ -382,6 +383,7 @@ func poly(events_api string, apiClient *http.Client, events_chan chan JData) {
 				events_chan <- jd
 			}
 		}()
+		time.Sleep(2 * time.Second)
 	}
 
 }
@@ -523,7 +525,7 @@ type Trade struct {
 }
 
 func polyTrades(api string, apiClient *http.Client, tradeWalletC chan Trade) {
-	ticker := time.NewTicker(150 * time.Millisecond)
+	ticker := time.NewTicker(1 * time.Second)
 
 	directory, err := os.Getwd()
 	if err != nil {
