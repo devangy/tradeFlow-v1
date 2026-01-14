@@ -169,7 +169,7 @@ type JData struct {
 
 func kalshi(events_API string, apiClient *http.Client, events_chan chan JData) {
 
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(20 * time.Second)
 
 	defer ticker.Stop()
 
@@ -299,7 +299,7 @@ func kalshi(events_API string, apiClient *http.Client, events_chan chan JData) {
 
 func poly(events_api string, apiClient *http.Client, events_chan chan JData) {
 
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(20 * time.Second)
 
 	defer ticker.Stop()
 
